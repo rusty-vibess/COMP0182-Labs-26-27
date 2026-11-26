@@ -5,7 +5,6 @@ from contextlib import ExitStack
 import os
 import re
 import sys
-import time
 
 
 class Decoder:
@@ -114,17 +113,14 @@ def main():
         )
         cleanup.callback(local_node.destroy_node)
         publisher = local_node.create_publisher(Image, "camera/video_raw", 1)
-        camera_ready = False
 
         def receive(message):
-            nonlocal camera_ready
             for frame, header in decoder.decode(message):
                 image = bridge.cv2_to_imgmsg(
                     frame.to_ndarray(format="bgr24"), encoding="bgr8"
                 )
                 image.header = header
                 publisher.publish(image)
-                camera_ready = True
 
         input_node = rclpy.create_node(
             "camera_h264_receiver",
@@ -139,30 +135,13 @@ def main():
             QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT),
         )
         input_node.get_logger().info(
-            f"Waiting up to 60s for {subscription.topic_name}. "
+            f"Waiting for {subscription.topic_name}. "
             f"Decoded images will be on {publisher.topic_name} locally."
         )
         executor = SingleThreadedExecutor(context=input_context)
         cleanup.callback(executor.shutdown)
         try:
-            deadline = time.monotonic() + 60
-            while input_context.ok() and not camera_ready:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    source = (
-                        "Launch sim.launch.py with camera_transport:=h264."
-                        if args.input_localhost_only == "true"
-                        else "Start the robot camera and check its ROS domain."
-                    )
-                    raise SystemExit(
-                        f"FAIL: no decodable H.264 frames on {subscription.topic_name} "
-                        f"after 60s. {source}"
-                    )
-
-                rclpy.spin_once(input_node, executor=executor, timeout_sec=remaining)
-
-            if input_context.ok():
-                rclpy.spin(input_node, executor=executor)
+            rclpy.spin(input_node, executor=executor)
         except (KeyboardInterrupt, ExternalShutdownException):
             pass
 

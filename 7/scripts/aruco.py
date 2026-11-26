@@ -101,7 +101,7 @@ def run(args, task_config):
             self.started = time.monotonic()
             self.last_emit = 0.0
             self.last_console = None
-            self.done, self.passed, self.failed = False, False, False
+            self.done = self.passed = False
             self.check_frames = deque(maxlen=3)
             self.annotated_frame = None
             self.student_aruco_todo = False
@@ -245,7 +245,7 @@ def run(args, task_config):
                 if changed or now_mono - self.last_emit >= 1.0:
                     self.emit(observation, now_ns, now_mono)
 
-            if not self.passed and now_mono - self.started >= args.timeout:
+            if args.check and not self.passed and now_mono - self.started >= args.timeout:
                 if observation["status"] == "STALE":
                     source = ("Start make sim and make decode."
                               if args.use_sim_time else "Start make decode and check robot bringup.")
@@ -257,7 +257,7 @@ def run(args, task_config):
 
                 print(f"FAIL: camera on {args.image_topic} timed out after {args.timeout:g}s. {detail}",
                       file=sys.stderr, flush=True)
-                self.done = self.failed = True
+                self.done = True
 
     node = None
     rclpy.init(args=[])
@@ -278,7 +278,7 @@ def run(args, task_config):
     if args.check:
         return 0 if node is not None and node.passed else 1
 
-    return 1 if node is not None and node.failed else 0
+    return 0
 
 
 def main(argv=None):
