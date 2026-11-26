@@ -137,7 +137,7 @@ check-hardware: ## Check the configured TurtleBot is visible
 	@$(ROS_BASE) python3 scripts/check_hardware.py "$$ROBOT_NAME"
 
 check: ## Run the Lab 7 preflight for SIM or REAL
-	@ROS_LOCALHOST_ONLY=1 $(PYTHON) scripts/aruco.py --robot-name "$$ROBOT_NAME" \
+	@$(PYTHON) scripts/aruco.py --robot-name "$$ROBOT_NAME" \
 		--use-sim-time "$$USE_SIM_TIME" --image-topic "$$CAMERA_TOPIC" --check
 
 require-robot:

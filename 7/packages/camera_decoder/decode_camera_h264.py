@@ -1,4 +1,4 @@
-"""Decode a robot's ROS H.264 packets to a localhost-only raw image topic."""
+"""Decode a robot's ROS H.264 packets to a raw image topic."""
 
 import argparse
 from contextlib import ExitStack
@@ -92,7 +92,7 @@ def main():
     namespace = f"/{args.robot_name}"
     with ExitStack() as cleanup:
         # humble captures localhost settings independently at context initialisation
-        os.environ["ROS_LOCALHOST_ONLY"] = "1"
+        os.environ.setdefault("ROS_LOCALHOST_ONLY", "1")
         rclpy.init(args=[], context=local_context)
         cleanup.callback(local_context.try_shutdown)
         os.environ["ROS_LOCALHOST_ONLY"] = (
@@ -114,13 +114,22 @@ def main():
         cleanup.callback(local_node.destroy_node)
         publisher = local_node.create_publisher(Image, "camera/video_raw", 1)
 
+        received_packet = published_frame = False
+
         def receive(message):
+            nonlocal received_packet, published_frame
+            if not received_packet:
+                input_node.get_logger().info(f"Received first H.264 packet on {subscription.topic_name}.")
+                received_packet = True
             for frame, header in decoder.decode(message):
                 image = bridge.cv2_to_imgmsg(
                     frame.to_ndarray(format="bgr24"), encoding="bgr8"
                 )
                 image.header = header
                 publisher.publish(image)
+                if not published_frame:
+                    local_node.get_logger().info(f"Published first raw frame on {publisher.topic_name}.")
+                    published_frame = True
 
         input_node = rclpy.create_node(
             "camera_h264_receiver",
@@ -136,7 +145,7 @@ def main():
         )
         input_node.get_logger().info(
             f"Waiting for {subscription.topic_name}. "
-            f"Decoded images will be on {publisher.topic_name} locally."
+            f"Decoded images will be on {publisher.topic_name}."
         )
         executor = SingleThreadedExecutor(context=input_context)
         cleanup.callback(executor.shutdown)
