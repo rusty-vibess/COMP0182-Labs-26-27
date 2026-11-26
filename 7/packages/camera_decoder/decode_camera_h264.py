@@ -60,9 +60,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--robot-name", required=True)
     parser.add_argument("--input-topic", default="camera/video_h264")
-    parser.add_argument(
-        "--input-localhost-only", default="false", choices=("true", "false")
-    )
     args = parser.parse_args()
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", args.robot_name):
         parser.error("robot-name must be the robot name without a leading slash")
@@ -88,53 +85,37 @@ def main():
     from sensor_msgs.msg import Image  # rusty-linter: ignore
 
     decoder, bridge = Decoder(), CvBridge()
-    local_context, input_context = Context(), Context()
+    context = Context()
     namespace = f"/{args.robot_name}"
     with ExitStack() as cleanup:
-        # humble captures localhost settings independently at context initialisation
-        os.environ.setdefault("ROS_LOCALHOST_ONLY", "1")
-        rclpy.init(args=[], context=local_context)
-        cleanup.callback(local_context.try_shutdown)
-        os.environ["ROS_LOCALHOST_ONLY"] = (
-            "1" if args.input_localhost_only == "true" else "0"
-        )
         rclpy.init(
             args=[],
-            context=input_context,
+            context=context,
             signal_handler_options=SignalHandlerOptions.ALL,
         )
         cleanup.callback(uninstall_signal_handlers)
-        cleanup.callback(input_context.try_shutdown)
+        cleanup.callback(context.try_shutdown)
 
         local_node = rclpy.create_node(
             "decoded_camera",
             namespace=namespace,
-            context=local_context,
+            context=context,
         )
         cleanup.callback(local_node.destroy_node)
         publisher = local_node.create_publisher(Image, "camera/video_raw", 1)
 
-        received_packet = published_frame = False
-
         def receive(message):
-            nonlocal received_packet, published_frame
-            if not received_packet:
-                input_node.get_logger().info(f"Received first H.264 packet on {subscription.topic_name}.")
-                received_packet = True
             for frame, header in decoder.decode(message):
                 image = bridge.cv2_to_imgmsg(
                     frame.to_ndarray(format="bgr24"), encoding="bgr8"
                 )
                 image.header = header
                 publisher.publish(image)
-                if not published_frame:
-                    local_node.get_logger().info(f"Published first raw frame on {publisher.topic_name}.")
-                    published_frame = True
 
         input_node = rclpy.create_node(
             "camera_h264_receiver",
             namespace=namespace,
-            context=input_context,
+            context=context,
         )
         cleanup.callback(input_node.destroy_node)
         subscription = input_node.create_subscription(
@@ -147,7 +128,7 @@ def main():
             f"Waiting for {subscription.topic_name}. "
             f"Decoded images will be on {publisher.topic_name}."
         )
-        executor = SingleThreadedExecutor(context=input_context)
+        executor = SingleThreadedExecutor(context=context)
         cleanup.callback(executor.shutdown)
         try:
             rclpy.spin(input_node, executor=executor)

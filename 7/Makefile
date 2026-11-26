@@ -126,7 +126,7 @@ explore: ## Fetch explore_lite and run the launch exercise
 
 ##@ Marker reading
 decode: ## Decode H.264 and publish ArUco frames for RViz
-	@$(ROS_BASE) exec ros2 launch ./packages/camera_decoder/decode_camera.launch.py "robot_name:=$$ROBOT_NAME" "use_sim_time:=$$USE_SIM_TIME" "input_topic:=camera/video_h264"
+	@$(ROS_BASE) exec ros2 launch ./packages/camera_decoder/decode_camera.launch.py "robot_name:=$$ROBOT_NAME" "use_sim_time:=$$USE_SIM_TIME"
 
 mission: ## Run the autonomous marker mission with recorded poses
 	@$(ROS_OVERLAY) exec ros2 run mission autonomous_search.py --ros-args \
@@ -151,7 +151,7 @@ sim localise mapping nav rviz teleop pose explore decode mission check-hardware 
 sim: require-sim
 
 ifeq ($(USE_SIM_TIME),true)
-decode check mission: require-sim
+mission: require-sim
 else ifeq ($(USE_SIM_TIME),false)
 mapping nav mission: check-hardware
 endif

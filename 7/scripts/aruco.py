@@ -67,8 +67,7 @@ def arguments(argv=None):
 
 
 def run(args, task_config):
-    # match the decoder's output scope and transport configuration
-    os.environ.setdefault("ROS_LOCALHOST_ONLY", "1")
+    # match the decoder's middleware and transport configuration
     os.environ["RMW_IMPLEMENTATION"] = "rmw_fastrtps_cpp"
     os.environ["SKIP_DEFAULT_XML"] = "1"
     for key in ("FASTRTPS_DEFAULT_PROFILES_FILE", "FASTDDS_DEFAULT_PROFILES_FILE",

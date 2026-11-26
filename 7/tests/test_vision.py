@@ -193,11 +193,15 @@ class PreflightTests(unittest.TestCase):
                 with self.subTest(use_sim_time=use_sim_time):
                     mode = [] if use_sim_time is None else [f"USE_SIM_TIME={use_sim_time}"]
                     recipe = subprocess.check_output(
-                        make + mode + ["check"], cwd=directory, env=env, text=True)
+                        make + mode + ["ROS_LOCALHOST_ONLY=0", "decode", "check"],
+                        cwd=directory, env=env, text=True)
                     self.assertIn('--use-sim-time "$USE_SIM_TIME"', recipe)
-                    self.assertEqual("For SIM, set USE_SIM_TIME" in recipe, use_sim_time != "false")
+                    self.assertNotIn("For SIM, set USE_SIM_TIME", recipe)
                     self.assertNotIn("scripts/check_hardware.py", recipe)
 
+            sim = subprocess.check_output(
+                make + ["sim"], cwd=directory, env=env, text=True)
+            self.assertIn("For SIM, set USE_SIM_TIME", sim)
             smoke = subprocess.check_output(
                 make + ["check-hardware"], cwd=directory, env=env, text=True)
         self.assertIn("scripts/check_hardware.py", smoke)
