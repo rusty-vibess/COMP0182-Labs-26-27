@@ -10,7 +10,6 @@
   <depend>ffmpeg_encoder_decoder</depend>
   <depend>ffmpeg_image_transport_msgs</depend>
   <depend>libopencv-dev</depend>
-  <depend>nlohmann-json-dev</depend>
   <depend>pluginlib</depend>
   <depend>qtbase5-dev</depend>
   <depend>rclcpp</depend>
