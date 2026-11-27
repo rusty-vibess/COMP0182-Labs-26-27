@@ -50,7 +50,7 @@ EXPLORE_URL := https://github.com/robo-friends/m-explore-ros2.git
 EXPLORE_REV := 326cf8a0b487c34246bb8f3326afbcd69576dc60
 
 .PHONY: mast-head help require-robot require-sim build sim localise mapping nav \
-	rviz teleop pose explore decode mission check check-hardware
+	rviz teleop pose explore mission check check-hardware
 
 mast-head:
 	@printf '$(COLOUR_CYAN)==>$(COLOUR_RESET) Lab 7: ArUco Markers and CV\n'
@@ -85,8 +85,8 @@ help: mast-head ## Show available commands
 			match($$0, / ## /); row(name, substr($$0, RSTART + RLENGTH)) \
 		}' $(MAKEFILE_LIST)
 
-build: mast-head ## Build the Humble planner and mission packages
-	@$(ROS_BASE) mkdir -p ros2_ws && cd ros2_ws && colcon build --base-paths ../packages --symlink-install --packages-up-to planner mission
+build: mast-head ## Build the Humble planner, mission and RViz display
+	@$(ROS_BASE) mkdir -p ros2_ws && cd ros2_ws && colcon build --base-paths ../packages --symlink-install --packages-up-to planner mission rviz_aruco_camera
 
 ##@ Simulation and navigation
 sim: ## Start Gazebo in simulation time
@@ -102,7 +102,7 @@ nav: ## Start Nav2 with the custom planner bridge
 	@$(ROS_OVERLAY) exec ros2 launch ./launch/nav.launch.py "robot_name:=$$ROBOT_NAME" "use_sim_time:=$$USE_SIM_TIME"
 
 rviz: ## Open the map and navigation view
-	@$(ROS_BASE) exec ros2 launch ./launch/rviz.launch.py "robot_name:=$$ROBOT_NAME" "use_sim_time:=$$USE_SIM_TIME" "fixed_frame:=map"
+	@$(ROS_OVERLAY) exec ros2 launch ./launch/rviz.launch.py "robot_name:=$$ROBOT_NAME" "use_sim_time:=$$USE_SIM_TIME" "fixed_frame:=map"
 
 teleop: ## Drive the robot after stopping Nav2
 	@$(ROS_BASE) exec ros2 run turtlebot3_teleop teleop_keyboard --ros-args -r "cmd_vel:=/$$ROBOT_NAME/cmd_vel"
@@ -125,9 +125,6 @@ explore: ## Fetch explore_lite and run the launch exercise
 	@$(ROS_OVERLAY) exec ros2 launch ./exercises/explore_starter.launch.py "robot_name:=$$ROBOT_NAME" "use_sim_time:=$$USE_SIM_TIME"
 
 ##@ Marker reading
-decode: ## Decode H.264 and publish ArUco frames for RViz
-	@$(ROS_BASE) exec ros2 launch ./packages/camera_decoder/decode_camera.launch.py "robot_name:=$$ROBOT_NAME" "use_sim_time:=$$USE_SIM_TIME"
-
 mission: ## Run the autonomous marker mission with recorded poses
 	@$(ROS_OVERLAY) exec ros2 run mission autonomous_search.py --ros-args \
 		-r "__ns:=/$$ROBOT_NAME" -p "robot_name:=$$ROBOT_NAME" -p "use_sim_time:=$$USE_SIM_TIME"
@@ -138,7 +135,8 @@ check-hardware: ## Check the configured TurtleBot is visible
 
 check: ## Run the Lab 7 preflight for SIM or REAL
 	@$(PYTHON) scripts/aruco.py --robot-name "$$ROBOT_NAME" \
-		--use-sim-time "$$USE_SIM_TIME" --image-topic "$$CAMERA_TOPIC" --check
+		--use-sim-time "$$USE_SIM_TIME" \
+		$(if $(strip $(CAMERA_TOPIC)),--image-topic "$$CAMERA_TOPIC" --check,--check-observations)
 
 require-robot:
 	@[[ "$$ROBOT_NAME" =~ ^tb_[A-Za-z0-9_]+$$ ]] || { printf 'Set ROBOT_NAME=tb_<NAME> in .env.\n' >&2; exit 2; }
@@ -147,7 +145,7 @@ require-robot:
 require-sim:
 	@[[ "$$USE_SIM_TIME" == true && "$$ROS_LOCALHOST_ONLY" == 1 ]] || { printf 'For SIM, set USE_SIM_TIME=true and ROS_LOCALHOST_ONLY=1 in .env.\n' >&2; exit 2; }
 
-sim localise mapping nav rviz teleop pose explore decode mission check-hardware check: mast-head require-robot
+sim localise mapping nav rviz teleop pose explore mission check-hardware check: mast-head require-robot
 sim: require-sim
 
 ifeq ($(USE_SIM_TIME),true)

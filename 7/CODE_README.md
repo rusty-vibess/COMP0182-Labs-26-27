@@ -30,9 +30,9 @@ Run `make help` for the command list. Keep long-running commands in separate ter
 
 | Task | Commands |
 | --- | --- |
-| **1. Read signs and record poses** | In SIM, start `make sim` and `make localise`. Run `make decode`, `make rviz` and `make check`. Drive with `make teleop` and use `make pose` at the start, each sign view and each parking spot. |
+| **1. Read signs and record poses** | In SIM, start `make sim` and `make localise`. Run `make build` once, then start `make rviz` before `make check`. Drive with `make teleop` and use `make pose` at the start, each sign view and each parking spot. |
 | **2. Run the mission** | Run `make build`. Return to A on the same map and stop teleop. Keep localisation and the camera running. Start `make nav`, then run `make mission`. |
-| **3. Explore (optional)** | In SIM, stop the Task 2 processes and restart `make sim`. Start `make mapping`, `make rviz` and `make decode`. Once the map updates, start `make nav`, then `make explore`. For REAL, follow the supervised Task 3 procedure in `README.md`. |
+| **3. Explore (optional)** | In SIM, stop the Task 2 processes and restart `make sim`. Start `make mapping` and `make rviz`. Once the map updates, start `make nav`, then `make explore`. For REAL, follow the supervised Task 3 procedure in `README.md`. |
 
 
 ### Command reference
@@ -41,8 +41,8 @@ Run `make help` for the command list. Keep long-running commands in separate ter
 | --- | --- |
 | `make localise` | Find the robot’s position on the supplied map. |
 | `make mapping` | Build a live map for exploration. |
-| `make decode` | Process the camera stream and publish live marker readings. |
-| `make check` | Check that fresh camera frames are arriving. |
+| `make rviz` | View the camera and publish live marker readings. |
+| `make check` | Wait for three fresh observations from RViz. |
 | `make pose` | Show the map coordinates and heading to record in the mission file. |
 | `make nav` | Start Nav2 so it can accept navigation goals. |
 | `make mission` | Visit the recorded views and use fresh sign readings to choose a parking goal. |

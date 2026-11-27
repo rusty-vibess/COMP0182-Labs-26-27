@@ -1,5 +1,6 @@
 """View one named robot's scans, map and localisation in RViz."""
 
+import json
 import re
 import tempfile
 from pathlib import Path
@@ -40,10 +41,15 @@ def _launch_nodes(context):
 
     fixed_frame = f"{namespace}/odom" if fixed_frame == "odom" else "map"
     # hardware descriptions already contain the namespace in their link names
-    tf_prefix = namespace if LaunchConfiguration("use_sim_time").perform(context) == "true" else ""
-    template = Path(__file__).resolve().parents[1] / "config/static/lab.rviz"
+    use_sim_time = LaunchConfiguration("use_sim_time")
+    simulated = use_sim_time.perform(context) == "true"
+    tf_prefix = namespace if simulated else ""
+    config_dir = Path(__file__).resolve().parents[1] / "config"
+    task = config_dir / ("static/sim_task.yaml" if simulated else "real_mission.yaml")
+    template = config_dir / "static/lab.rviz"
     rendered = Template(template.read_text()).substitute(
-        agent_name=namespace, tf_prefix=tf_prefix, fixed_frame=fixed_frame
+        agent_name=namespace, tf_prefix=tf_prefix, fixed_frame=fixed_frame,
+        aruco_task_config=json.dumps(str(task)),
     )
     directory = tempfile.TemporaryDirectory(prefix=f"rviz_{namespace}_")
     config = Path(directory.name) / "lab.rviz"
@@ -55,13 +61,9 @@ def _launch_nodes(context):
             package="rviz2",
             executable="rviz2",
             arguments=["-d", str(config)],
-            parameters=[
-                {
-                    "use_sim_time": ParameterValue(
-                        LaunchConfiguration("use_sim_time"), value_type=bool
-                    )
-                }
-            ],
+            parameters=[{
+                "use_sim_time": ParameterValue(use_sim_time, value_type=bool),
+            }],
             output="screen",
             on_exit=_stop_session,
         ),

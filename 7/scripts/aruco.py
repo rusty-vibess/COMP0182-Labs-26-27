@@ -42,8 +42,11 @@ def arguments(argv=None):
     parser.add_argument("--task-config", type=Path,
                         default=SCRIPTS.parent / "config/static/sim_task.yaml")
     parser.add_argument("--image-topic", help="Default: /<robot-name>/camera/video_raw")
-    parser.add_argument("--check", action="store_true",
-                        help="No GUI: require three usable images, then exit")
+    check = parser.add_mutually_exclusive_group()
+    check.add_argument("--check", action="store_true",
+                       help="Require three usable raw images, then exit")
+    check.add_argument("--check-observations", action="store_true",
+                       help="Require three usable observations from the RViz camera")
     parser.add_argument("--expected-id", type=int,
                         help="In --check mode, require this ID in all three images")
     parser.add_argument("--timeout", type=float, default=60.0,
@@ -58,12 +61,116 @@ def arguments(argv=None):
     if args.expected_id is not None and not args.check:
         parser.error("--expected-id is for --check")
 
+    if args.check_observations and args.image_topic:
+        parser.error("--image-topic is for the raw image path")
+
     args.use_sim_time = args.use_sim_time == "true"
     args.image_topic = args.image_topic or f"/{args.robot_name}/camera/video_raw"
     if not args.image_topic.startswith("/"):
         parser.error("--image-topic must be an absolute ROS topic name")
 
     return args
+
+
+class ObservationCheck:
+    def __init__(self, use_sim_time):
+        self.clock = "ros_sim" if use_sim_time else "ros_system"
+        self.reason = "waiting for RViz camera observations"
+        self.frames = deque(maxlen=3)
+        self.last_clock_ns = None
+
+    def receive(self, data, arrived_at, local_clock_ns):
+        """Return a valid observation after three fresh, advancing stamps."""
+        try:
+            observation = json.loads(data)
+        except ValueError:
+            self.reason = "invalid observation JSON"
+            return None
+
+        if not isinstance(observation, dict) or observation.get("clock") != self.clock:
+            self.reason = "observation clock does not match this check"
+            return None
+
+        clock_ns = observation.get("clock_now_ns")
+        if type(clock_ns) is not int or clock_ns <= 0:
+            self.frames.clear()
+            self.reason = observation.get("reason") or "observation clock has not started"
+            return None
+
+        if self.last_clock_ns is not None and clock_ns < self.last_clock_ns:
+            self.frames.clear()
+        self.last_clock_ns = clock_ns
+
+        stamp = observation.get("source_stamp_ns")
+        frame = observation.get("frame_id")
+        receipt_age = observation.get("received_age_s")
+        width, height = observation.get("image_width"), observation.get("image_height")
+        if (observation.get("status") not in ("LIVE", "NO_MARKER")
+                or type(stamp) is not int or stamp <= 0
+                or not -500_000_000 <= max(clock_ns, local_clock_ns) - stamp <= 2_000_000_000
+                or type(receipt_age) not in (int, float)
+                or not 0 <= receipt_age <= 2
+                or not isinstance(frame, str) or not frame
+                or type(width) is not int or type(height) is not int or min(width, height) <= 0):
+            self.frames.clear()
+            self.reason = observation.get("reason") or "unusable camera observation"
+            return None
+
+        if self.frames and frame != self.frames[-1][1]:
+            self.frames.clear()
+        while self.frames and arrived_at - self.frames[0][2] > 2:
+            self.frames.popleft()
+        if self.frames and stamp <= self.frames[-1][0]:
+            return None
+        self.frames.append((stamp, frame, arrived_at))
+        self.reason = "fewer than three usable observations"
+        return observation if len(self.frames) == 3 else None
+
+
+def run_observation_check(args):
+    import rclpy  # rusty-linter: ignore
+    from rclpy.executors import ExternalShutdownException  # rusty-linter: ignore
+    from rclpy.parameter import Parameter  # rusty-linter: ignore
+    from rclpy.qos import QoSProfile, ReliabilityPolicy  # rusty-linter: ignore
+    from std_msgs.msg import String  # rusty-linter: ignore
+
+    check = ObservationCheck(args.use_sim_time)
+    topic = f"/{args.robot_name}/vision/observations"
+    result, node = None, None
+
+    def receive(message):
+        nonlocal result
+        result = check.receive(message.data, time.monotonic(), node.get_clock().now().nanoseconds)
+
+    rclpy.init(args=[])
+    try:
+        node = rclpy.create_node(
+            "lab7_camera_check", namespace=f"/{args.robot_name}",
+            parameter_overrides=[Parameter("use_sim_time", Parameter.Type.BOOL, args.use_sim_time)])
+        node.create_subscription(
+            String, topic, receive, QoSProfile(depth=5, reliability=ReliabilityPolicy.RELIABLE))
+        deadline = time.monotonic() + args.timeout
+        while rclpy.ok() and result is None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            rclpy.spin_once(node, timeout_sec=min(0.1, remaining))
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
+    finally:
+        if node is not None:
+            node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
+    if result is not None:
+        print(f"PASS: three advancing image stamps; {result['image_width']}x{result['image_height']}; "
+              f"frame {result['frame_id']}", flush=True)
+        return 0
+
+    print(f"FAIL: camera on {topic} did not pass the check. {check.reason}. Start make rviz.",
+          file=sys.stderr, flush=True)
+    return 1
 
 
 def run(args, task_config):
@@ -165,7 +272,7 @@ def run(args, task_config):
                     except NotImplementedError:
                         if not self.student_aruco_todo:
                             self.get_logger().warning(
-                                "Complete exercises/aruco_reader.py and restart make decode.")
+                                "Complete exercises/aruco_reader.py and restart the camera reader.")
                             self.student_aruco_todo = True
 
                         ids, labels, corners = [], [], []
@@ -246,8 +353,8 @@ def run(args, task_config):
 
             if args.check and not self.passed and now_mono - self.started >= args.timeout:
                 if observation["status"] == "STALE":
-                    source = ("Start make sim and make decode."
-                              if args.use_sim_time else "Start make decode and check robot bringup.")
+                    source = ("Start make sim and the raw image publisher."
+                              if args.use_sim_time else "Start the raw image publisher and check robot bringup.")
                     detail = f"{observation['reason']}. {source}"
                 elif args.expected_id is not None:
                     detail = f"marker {args.expected_id} not present in three recent images"
@@ -283,6 +390,9 @@ def run(args, task_config):
 def main(argv=None):
     args = arguments(argv)
     try:
+        if args.check_observations:
+            return run_observation_check(args)
+
         if args.check and args.expected_id is None:
             return run(args, {})
 

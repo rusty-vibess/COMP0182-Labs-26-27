@@ -1,0 +1,7 @@
+<library path="rviz_aruco_camera">
+  <class name="rviz_aruco_camera/CameraStreamH264"
+         type="rviz_aruco_camera::CameraStreamH264"
+         base_class_type="rviz_common::Display">
+    <description>View an H.264 stream in RViz with optional ArUco annotation.</description>
+  </class>
+</library>

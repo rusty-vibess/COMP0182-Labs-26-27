@@ -31,7 +31,12 @@ make help
 
 ### A. Check the camera
 
-Start Gazebo in Terminal A and the camera in Terminal B. Run the check in Terminal C. **Expected:** three usable images with advancing timestamps. Leave Gazebo and the camera running.
+Build the Lab 7 packages once on the student computer. Start Gazebo in Terminal A and RViz in Terminal B. Run the check in Terminal C. Expect three usable images with advancing timestamps. Leave Gazebo and RViz running.
+
+```bash
+rosdep install --from-paths packages --ignore-src -y
+make build
+```
 
 **Terminal A — start Gazebo**
 
@@ -39,10 +44,10 @@ Start Gazebo in Terminal A and the camera in Terminal B. Run the check in Termin
 make sim
 ```
 
-**Terminal B — start the camera**
+**Terminal B — start RViz and the camera display**
 
 ```bash
-make decode
+make rviz
 ```
 
 **Terminal C — check the camera**
@@ -61,15 +66,9 @@ Complete `detect_markers()` in `exercises/aruco_reader.py`. Given a camera image
 bash scripts/python.sh tests/check_aruco.py
 ```
 
-Once the detector check passes, restart `make decode` to load your changes, then open RViz. Look for an **outline, marker ID and fruit label**; do not count old or unreadable images.
+Use the exercise checker to verify your Python detector. The live **CameraStreamH264** display uses OpenCV's native detector. Look for an **outline, marker ID and fruit label** and use fresh, readable frames.
 
-**Terminal D — RViz**
-
-```bash
-make rviz
-```
-
-If **ArUco Camera** is blank, check that `make decode` is running. In another terminal:
+If **CameraStreamH264** is blank, check its status in RViz. In another terminal:
 
 ```bash
 source /opt/ros/humble/setup.bash
@@ -173,13 +172,7 @@ make nav
 make rviz
 ```
 
-**Terminal E — camera**
-
-```bash
-make decode
-```
-
-**Terminal F — camera check**
+**Terminal E — camera check**
 
 ```bash
 make check
@@ -281,12 +274,6 @@ make rviz
 make nav
 ```
 
-**Terminal E — camera**
-
-```bash
-make decode
-```
-
 Complete the supplied Explore launch exercise in `exercises/explore_starter.launch.py`, using Lab 6 as a guide. On Humble, remap the five `navigate_to_pose/_action/` endpoints to Nav2's root action. Keep Explore in the robot namespace for pause/resume. Test it before starting Explore.
 
 **Check the Explore exercise**
@@ -295,7 +282,7 @@ Complete the supplied Explore launch exercise in `exercises/explore_starter.laun
 bash scripts/python.sh tests/check_frontier.py
 ```
 
-**Terminal F — Explore (after the check passes)**
+**Terminal E — Explore (after the check passes)**
 
 ```bash
 make explore

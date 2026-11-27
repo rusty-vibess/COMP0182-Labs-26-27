@@ -150,32 +150,87 @@ class ObservationFreshnessTests(unittest.TestCase):
 
 
 
+
 class ViewerModeTests(unittest.TestCase):
-    def test_make_decode_uses_the_lab_camera_launcher(self):
+    def test_make_rviz_uses_the_display_overlay_and_build_includes_plugin(self):
         import subprocess
 
         recipe = subprocess.check_output(
-            ["make", "--dry-run", "--no-print-directory", "decode",
+            ["make", "--dry-run", "--no-print-directory", "build", "rviz",
              "ROBOT_NAME=tb_alpha", "ROS_DOMAIN_ID=36"], cwd=ROOT, text=True)
-        self.assertIn("./packages/camera_decoder/decode_camera.launch.py", recipe)
+        self.assertIn("--packages-up-to planner mission rviz_aruco_camera", recipe)
+        self.assertIn("source ros2_ws/install/setup.bash", recipe)
+        self.assertIn("./launch/rviz.launch.py", recipe)
         self.assertIn('robot_name:=$ROBOT_NAME', recipe)
         self.assertIn('use_sim_time:=$USE_SIM_TIME', recipe)
 
-    def test_rviz_preset_displays_the_namespaced_image(self):
+    def test_camera_display_and_remap_use_the_selected_robot(self):
+        import ast
+        import json
+        from pathlib import Path
         from string import Template
+        from types import SimpleNamespace
+        from unittest.mock import patch
         import yaml
 
-        source = (ROOT / "config/static/lab.rviz").read_text()
-        config = yaml.safe_load(Template(source).substitute(
-            agent_name="tb_alpha", tf_prefix="tb_alpha", fixed_frame="map"))
-        manager = config["Visualization Manager"]
-        display, = [item for item in manager["Displays"]
-                    if item["Class"] == "rviz_default_plugins/Image"]
-        self.assertTrue(display["Enabled"])
-        self.assertEqual(display["Topic"]["Value"], "/tb_alpha/camera/video_annotated")
-        self.assertEqual(display["Topic"]["Reliability Policy"], "Best Effort")
-        self.assertNotIn("nav2_rviz_plugins/GoalTool", [tool["Class"] for tool in manager["Tools"]])
+        path = ROOT / "launch/rviz.launch.py"
+        function, = [node for node in ast.parse(path.read_text()).body
+                     if isinstance(node, ast.FunctionDef) and node.name == "_launch_nodes"]
+        namespace = dict(
+            __file__=str(path), Path=Path, Template=Template, json=json,
+            re=__import__("re"),
+            tempfile=SimpleNamespace(TemporaryDirectory=lambda **options:
+                                      SimpleNamespace(name="/tmp/rviz-test", cleanup=lambda: None)),
+            LaunchConfiguration=lambda name: SimpleNamespace(perform=lambda context: context[name]),
+            RegisterEventHandler=lambda *a: None, OnShutdown=lambda **kw: None,
+            Node=lambda **kw: kw, ParameterValue=lambda value, value_type: value,
+            _stop_session=None,
+        )
+        exec(compile(ast.Module(body=[function], type_ignores=[]), str(path), "exec"), namespace)
+        for robot, sim, task in (("tb_alpha", "true", "static/sim_task.yaml"),
+                                 ("tb_beta", "false", "real_mission.yaml")):
+            with self.subTest(robot=robot), patch.object(Path, "write_text") as write:
+                _, node = namespace["_launch_nodes"](
+                    dict(robot_name=robot, use_sim_time=sim, fixed_frame="map"))
+                config = yaml.safe_load(write.call_args.args[0])
+                manager = config["Visualization Manager"]
+                display, = [item for item in manager["Displays"]
+                            if item["Class"] == "rviz_aruco_camera/ArucoCamera"]
+                self.assertTrue(display["Enabled"])
+                alias = f"/{robot}/camera/video/ffmpeg"
+                self.assertEqual(display["Topic"]["Value"], alias)
+                self.assertEqual(display["Topic"]["Reliability Policy"], "Best Effort")
+                self.assertEqual(display["Observations Topic"], f"/{robot}/vision/observations")
+                self.assertEqual(display["Task Config"], str(ROOT / "config" / task))
+                self.assertEqual(node["remappings"], [(alias, f"/{robot}/camera/video_h264")])
+                self.assertEqual(node["parameters"][0][f"{robot}.camera.video.ffmpeg.decoders.h264"], "h264")
+                self.assertNotIn("nav2_rviz_plugins/GoalTool", [tool["Class"] for tool in manager["Tools"]])
 
+
+class ObservationCheckTests(unittest.TestCase):
+    def test_requires_fresh_advancing_observations_with_one_frame(self):
+        import json
+        from aruco import ObservationCheck
+
+        check = ObservationCheck(False)
+        epoch = 1_700_000_000_000_000_000
+
+        def receive(index, frame="front", status="NO_MARKER"):
+            stamp = epoch + index * 100_000_000
+            evidence = dict(clock="ros_system", clock_now_ns=stamp + 1,
+                            source_stamp_ns=stamp, frame_id=frame,
+                            image_width=1280, image_height=720,
+                            received_age_s=0.01, status=status)
+            return check.receive(json.dumps(evidence), index / 10, stamp + 1)
+
+        self.assertIsNone(receive(1))
+        self.assertIsNone(receive(1))
+        self.assertIsNone(receive(2))
+        self.assertIsNone(receive(3, status="STALE"))
+        self.assertIsNone(receive(4))
+        self.assertIsNone(receive(5, frame="new"))
+        self.assertIsNone(receive(6, frame="new"))
+        self.assertIsNotNone(receive(7, frame="new"))
 
 class PreflightTests(unittest.TestCase):
     def test_sim_guard_and_turtlebot_smoke_are_separate(self):
@@ -193,12 +248,17 @@ class PreflightTests(unittest.TestCase):
                 with self.subTest(use_sim_time=use_sim_time):
                     mode = [] if use_sim_time is None else [f"USE_SIM_TIME={use_sim_time}"]
                     recipe = subprocess.check_output(
-                        make + mode + ["ROS_LOCALHOST_ONLY=0", "decode", "check"],
+                        make + mode + ["ROS_LOCALHOST_ONLY=0", "rviz", "check"],
                         cwd=directory, env=env, text=True)
                     self.assertIn('--use-sim-time "$USE_SIM_TIME"', recipe)
                     self.assertNotIn("For SIM, set USE_SIM_TIME", recipe)
                     self.assertNotIn("scripts/check_hardware.py", recipe)
+                    self.assertIn("--check-observations", recipe)
 
+            raw = subprocess.check_output(
+                make + ["CAMERA_TOPIC=/tb_alpha/custom", "check"], cwd=directory, env=env, text=True)
+            self.assertIn('--image-topic "$CAMERA_TOPIC" --check', raw)
+            self.assertNotIn("--check-observations", raw)
             sim = subprocess.check_output(
                 make + ["sim"], cwd=directory, env=env, text=True)
             self.assertIn("For SIM, set USE_SIM_TIME", sim)

@@ -6,12 +6,15 @@ Panels:
 Visualization Manager:
   Class: ""
   Displays:
-    - Class: rviz_default_plugins/Image
-      Name: ArUco Camera
+    - Class: rviz_aruco_camera/CameraStreamH264
+      Name: CameraStreamH264
       Enabled: true
+      Enable ArUco: true
+      Task Config: ${aruco_task_config}
+      Observations Topic: "/${agent_name}/vision/observations"
       Topic:
-        Value: /${agent_name}/camera/video_annotated
-        Depth: 1
+        Value: "/${agent_name}/camera/video_h264"
+        Depth: 5
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Durability Policy: Volatile

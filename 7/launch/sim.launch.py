@@ -116,7 +116,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             "camera_transport", default_value="h264", choices=["raw", "h264"],
-            description="Gazebo camera output, use a separate decoder for H.264",
+            description="Gazebo camera output, decoded in RViz when using H.264",
         ),
         DeclareLaunchArgument(
             "task_config", default_value=str(Path(__file__).resolve().parents[1] / "config/static/sim_task.yaml"),
